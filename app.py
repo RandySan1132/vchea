@@ -15,22 +15,40 @@ st.set_page_config(
     layout="centered"
 )
 
-# Load the model
+# Load the model (handles Teachable Machine + Sequential/Functional load bug in TF 2.16+)
 @st.cache_resource
 def load_model():
+    custom_objects = {
+        "DepthwiseConv2D": lambda **kwargs: tf.keras.layers.DepthwiseConv2D(
+            **{k: v for k, v in kwargs.items() if k != "groups"}
+        )
+    }
+    # Prefer SavedModel if present (avoids "expects 1 input, received 2" bug when loading .h5)
+    saved_model_dir = "keras_model_converted"
+    if os.path.isdir(saved_model_dir):
+        try:
+            return tf.keras.models.load_model(saved_model_dir, compile=False)
+        except Exception:
+            pass
+    # Load .h5 with safe_mode=False to allow full deserialization
     try:
         model = tf.keras.models.load_model(
             "keras_model.h5",
             compile=False,
-            custom_objects={
-                "DepthwiseConv2D": lambda **kwargs: tf.keras.layers.DepthwiseConv2D(
-                    **{k: v for k, v in kwargs.items() if k != "groups"}
-                )
-            }
+            custom_objects=custom_objects,
+            safe_mode=False,
         )
         return model
     except Exception as e:
-        st.error(f"Error loading model: {e}")
+        err_msg = str(e)
+        if "expects 1 input" in err_msg and "received 2" in err_msg:
+            st.error(
+                "Error loading model: Known compatibility issue with this model and TensorFlow 2.16+. "
+                "Use TensorFlow 2.15: in requirements.txt set `tensorflow-cpu>=2.15.0,<2.16.0`, "
+                "or run convert_model.py with TF 2.15 to create keras_model_converted (SavedModel) and use that."
+            )
+        else:
+            st.error(f"Error loading model: {e}")
         return None
 
 # Load labels
