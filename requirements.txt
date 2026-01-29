@@ -1,0 +1,7 @@
+streamlit
+tensorflow-cpu
+Pillow
+numpy
+PyGithub
+h5py
+protobuf
