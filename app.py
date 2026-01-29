@@ -1,10 +1,10 @@
+import os
 import streamlit as st
 import numpy as np
 from PIL import Image
 import tensorflow as tf
 from datetime import datetime
 import json
-import os
 from github import Github
 
 # Labels from Teachable Machine (happy, sad, frustrated)
