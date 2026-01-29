@@ -74,6 +74,17 @@ And modify app.py to use TFLite interpreter instead.
 
 ## Common Error Messages & Fixes
 
+### "Layer expects 1 input(s), but it received 2 input tensors" (functional_4 / Sequential)
+This is a known bug when loading Teachable Machine (or other Sequential+Functional) models in **TensorFlow 2.16+**.
+
+**Fix:**
+1. **Pin TensorFlow to 2.15** in `requirements.txt`:
+   ```
+   tensorflow-cpu>=2.15.0,<2.16.0
+   ```
+   Then reinstall: `pip install -r requirements.txt`
+2. **Or** convert the model with TF 2.15 and use SavedModel: run `convert_model.py` on a machine with TensorFlow 2.15, upload the `keras_model_converted` folder, and the app will load it automatically.
+
 ### "ERROR: Could not find a version that satisfies the requirement tensorflow"
 **Fix**: Use `tensorflow-cpu` instead of `tensorflow`
 
