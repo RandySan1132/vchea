@@ -1,8 +1,9 @@
+import os
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 import streamlit as st
 from PIL import Image, ImageOps
 import numpy as np
 import tensorflow as tf
-import os
 
 # --- 1. CONFIGURATION & SETUP ---
 st.set_page_config(page_title="Potato Leaf Disease Classifier", page_icon="🥔")
