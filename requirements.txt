@@ -1,5 +1,5 @@
 streamlit
-tensorflow-cpu
-tf-keras
-Pillow
+torch
+torchvision
+pillow
 numpy
