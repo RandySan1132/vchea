@@ -1,4 +1,4 @@
-tensorflow 
-streamlit 
-pillow 
+streamlit
+tensorflow==2.15.0
+pillow
 numpy
