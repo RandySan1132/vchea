@@ -1,83 +1,119 @@
-import os
-# --- CRITICAL FIX: Force Legacy Keras ---
-# This must be set before importing tensorflow to handle Teachable Machine models
-os.environ['TF_USE_LEGACY_KERAS'] = '1'
-
 import streamlit as st
-import tensorflow as tf
-from PIL import Image, ImageOps
-import numpy as np
+from PIL import Image
+import torch
+import torchvision.transforms as transforms
+import os
 
-# Set page title
-st.set_page_config(page_title="Keras Image Classifier", layout="centered")
+# --- 1. CONFIGURATION & SETUP ---
+st.set_page_config(page_title="Potato Leaf Disease Classifier", page_icon="🥔")
 
-# --- Load the Model ---
+# Define the file paths
+MODEL_PATH = 'model.pth'  # <--- REPLACE WITH YOUR ACTUAL MODEL FILENAME
+LABELS_PATH = 'labels.txt'
+
+# --- 2. HELPER FUNCTIONS ---
+
 @st.cache_resource
-def load_my_model():
-    # This specific fix handles the "groups" error common in Teachable Machine models
-    # when loading in newer TensorFlow versions
-    custom_objects = {
-        "DepthwiseConv2D": lambda **kwargs: tf.keras.layers.DepthwiseConv2D(
-            **{k: v for k, v in kwargs.items() if k != "groups"}
-        )
-    }
+def load_labels(labels_file):
+    """
+    Parses the labels.txt file.
+    Handles the specific format: '0 Healthy Potato Leaves'
+    """
+    labels = {}
+    try:
+        with open(labels_file, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                # Remove brackets and metadata if present, like 
+                clean_line = line.strip()
+                if not clean_line: continue
+                
+                # specific parsing for "0 Label Name" format
+                parts = clean_line.split(' ', 1)
+                
+                # If the first part is metadata like , skip to the number
+                if parts[0].startswith('['):
+                    # Try to find the first digit in the line
+                    import re
+                    match = re.search(r'(\d+)\s+(.*)', clean_line)
+                    if match:
+                        idx = int(match.group(1))
+                        name = match.group(2)
+                        labels[idx] = name
+                else:
+                    # Standard "0 Label" format
+                    if len(parts) == 2 and parts[0].isdigit():
+                        labels[int(parts[0])] = parts[1]
+    except Exception as e:
+        st.error(f"Error loading labels: {e}")
+        return {0: "Healthy", 1: "Blight"} # Fallback
+    return labels
+
+@st.cache_resource
+def load_model(model_path):
+    """
+    Loads the PyTorch model. 
+    Ensure you export your model to CPU mode before saving if deploying to a non-GPU machine.
+    """
+    if not os.path.exists(model_path):
+        st.warning(f"Model file not found at {model_path}. Please upload it.")
+        return None
     
     try:
-        model = tf.keras.models.load_model(
-            'keras_model.h5', 
-            compile=False, 
-            custom_objects=custom_objects
-        )
+        # Load the entire model
+        model = torch.load(model_path, map_location=torch.device('cpu'))
+        model.eval()
         return model
     except Exception as e:
         st.error(f"Error loading model: {e}")
         return None
 
-# Load model outside the main flow to ensure it's cached properly
-model = load_my_model()
+def process_image(image):
+    """
+    Preprocesses the image to match the model's training input.
+    Adjust resize/normalize values to match your specific training configuration.
+    """
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)), # Standard size, change if your model used 256 or others
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    return transform(image).unsqueeze(0) # Add batch dimension
 
-# --- UI Layout ---
-st.title("🤖 AI Image Classifier")
-st.write("Upload an image, and the model will predict what it is.")
+# --- 3. MAIN APP INTERFACE ---
 
-if model is None:
-    st.error("Model failed to load. Please check your 'keras_model.h5' file.")
-else:
-    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "png", "jpeg"])
+st.title("🥔 Potato Leaf Disease Detector")
+st.write("Upload an image of a potato leaf to detect if it is **Healthy** or has **Blight**.")
 
-    if uploaded_file is not None:
-        # Display the uploaded image
-        image = Image.open(uploaded_file)
-        st.image(image, caption='Uploaded Image', use_container_width=True)
-        
-        st.write("### Classifying...")
-        
-        # --- Preprocessing ---
-        # Most Keras models (like Teachable Machine) expect 224x224 images
-        size = (224, 224)
-        image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
-        
-        # Convert image to numpy array and normalize
-        image_array = np.asarray(image)
-        normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
-        
-        # Create the payload for the model (batch size 1, 224, 224, 3)
-        data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
-        data[0] = normalized_image_array
+# Load resources
+labels_map = load_labels(LABELS_PATH)
+model = load_model(MODEL_PATH)
 
-        # --- Prediction ---
-        prediction = model.predict(data)
-        index = np.argmax(prediction)
-        
-        # Check if you have a labels.txt file, otherwise show raw index
-        try:
-            with open("labels.txt", "r") as f:
-                class_names = f.readlines()
-            prediction_label = class_names[index].strip()
-            confidence_score = prediction[0][index]
-            st.success(f"Prediction: **{prediction_label}**")
-            st.info(f"Confidence Score: {confidence_score:.2%}")
-        except FileNotFoundError:
-            st.warning("Prediction complete, but 'labels.txt' was not found.")
-            st.write(f"Raw Prediction Index: {index}")
-            st.write(f"Full Prediction Array: {prediction}")
+# File Uploader
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    # Display the image
+    image = Image.open(uploaded_file).convert('RGB')
+    st.image(image, caption='Uploaded Leaf', use_container_width=True)
+    
+    if st.button("Analyze Leaf"):
+        if model is None:
+            st.error("Model not loaded. Please ensure 'model.pth' is in the directory.")
+        else:
+            with st.spinner('Analyzing...'):
+                # Prediction Logic
+                input_tensor = process_image(image)
+                with torch.no_grad():
+                    outputs = model(input_tensor)
+                    _, predicted = torch.max(outputs, 1)
+                    prediction_index = predicted.item()
+                
+                # Get label name
+                result_label = labels_map.get(prediction_index, "Unknown")
+                
+                # Display Results
+                if "Healthy" in result_label:
+                    st.success(f"**Prediction:** {result_label} ✅")
+                else:
+                    st.error(f"**Prediction:** {result_label} ⚠️")
